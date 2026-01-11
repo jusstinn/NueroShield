@@ -273,17 +273,34 @@ class MockNeuroEngine:
             "code": 0.0,
             "math": 0.0,
             "creative": 0.0,
-            "normal": 1.0,
+            "normal": 0.0,
         }
         
-        # Safety keywords
-        safety_keywords = ["kill", "bomb", "hack", "steal", "attack", "harm", 
-                          "weapon", "dangerous", "illegal", "hurt", "destroy"]
-        if any(kw in text_lower for kw in safety_keywords):
-            scores["safety"] = np.random.uniform(0.7, 1.0)
+        # High-risk safety keywords (harmful intent)
+        high_risk_keywords = ["kill", "bomb", "hack", "steal", "attack", "harm", 
+                             "weapon", "dangerous", "illegal", "hurt", "destroy",
+                             "virus", "malicious", "bypass", "exploit", "murder",
+                             "terrorist", "poison", "shoot", "stab"]
+        
+        # Medium-risk keywords
+        medium_risk_keywords = ["fight", "cheat", "trick", "break into", "secret"]
+        
+        # Count keyword matches for more accurate scoring
+        high_matches = sum(1 for kw in high_risk_keywords if kw in text_lower)
+        medium_matches = sum(1 for kw in medium_risk_keywords if kw in text_lower)
+        
+        if high_matches >= 2:
+            scores["safety"] = np.random.uniform(0.85, 0.98)
+        elif high_matches == 1:
+            scores["safety"] = np.random.uniform(0.65, 0.85)
+        elif medium_matches >= 1:
+            scores["safety"] = np.random.uniform(0.3, 0.5)
+        else:
+            scores["safety"] = 0.0  # No safety concern for benign prompts
+            scores["normal"] = 1.0
         
         # Code keywords
-        code_keywords = ["def ", "function", "class ", "import ", "var ", "const "]
+        code_keywords = ["def ", "function", "class ", "import ", "var ", "const ", "code"]
         if any(kw in text_lower for kw in code_keywords):
             scores["code"] = np.random.uniform(0.6, 0.9)
         
@@ -296,6 +313,14 @@ class MockNeuroEngine:
         creative_keywords = ["story", "poem", "creative", "imagine", "fantasy"]
         if any(kw in text_lower for kw in creative_keywords):
             scores["creative"] = np.random.uniform(0.6, 0.9)
+        
+        # Normal/benign keywords override safety concerns if present
+        benign_keywords = ["cook", "recipe", "weather", "hello", "poem", "music", 
+                          "garden", "travel", "book", "movie", "friend", "family",
+                          "help me", "please", "thank"]
+        if any(kw in text_lower for kw in benign_keywords) and high_matches == 0:
+            scores["safety"] = 0.0
+            scores["normal"] = 1.0
             
         return scores
     
@@ -309,15 +334,29 @@ class MockNeuroEngine:
         tokens = text.split()[:50]
         content_scores = self._detect_content_type(text)
         
-        # Generate base activations
-        activations = np.random.exponential(0.5, size=self.n_features)
+        # Generate base activations - LOW baseline for normal content
+        if content_scores.get("normal", 0) > 0.5:
+            # Benign content: low, sparse activations
+            activations = np.random.exponential(0.1, size=self.n_features)
+            activations = np.clip(activations, 0, 1.5)  # Cap at low values
+        else:
+            # Potentially concerning content: moderate baseline
+            activations = np.random.exponential(0.3, size=self.n_features)
         
         # Boost relevant category features based on content
         for category, score in content_scores.items():
-            if score > 0.5 and category in FEATURE_CATEGORIES:
+            if score > 0.3 and category in FEATURE_CATEGORIES:
                 for idx in FEATURE_CATEGORIES[category]:
                     if idx < self.n_features:
-                        activations[idx] = np.random.uniform(3.0, 15.0) * score
+                        # Scale activation with the risk score
+                        activations[idx] = np.random.uniform(5.0, 15.0) * score
+        
+        # For safety category specifically, scale very high for dangerous content
+        safety_score = content_scores.get("safety", 0)
+        if safety_score > 0.5:
+            for idx in FEATURE_CATEGORIES.get("safety", []):
+                if idx < self.n_features:
+                    activations[idx] = np.random.uniform(80, 150) * safety_score
         
         # Get top features
         top_indices = np.argsort(activations)[-10:][::-1]
@@ -494,33 +533,52 @@ class MockNeuroEngine:
         
         for prompt in prompts:
             content_scores = self._detect_content_type(prompt)
-            safety_score = content_scores.get("safety", 0.0)
+            risk_score = content_scores.get("safety", 0.0)
+            is_normal = content_scores.get("normal", 0.0) > 0.5
             
-            # Determine risk level
-            if safety_score > 0.8:
+            # Determine risk level based on content analysis
+            if is_normal and risk_score < 0.1:
+                risk_level = "low"
+                safety_score = np.random.uniform(0.85, 0.98)
+            elif risk_score > 0.8:
                 risk_level = "critical"
-            elif safety_score > 0.6:
+                safety_score = np.random.uniform(0.05, 0.15)
+            elif risk_score > 0.6:
                 risk_level = "high"
-            elif safety_score > 0.3:
+                safety_score = np.random.uniform(0.15, 0.35)
+            elif risk_score > 0.3:
                 risk_level = "medium"
+                safety_score = np.random.uniform(0.45, 0.65)
             else:
                 risk_level = "low"
+                safety_score = np.random.uniform(0.75, 0.92)
             
-            # Get triggered features
+            # Get triggered features - only show high-activation safety features for risky content
             analysis = self.analyze_prompt(prompt)
-            triggered = [f for f in analysis.top_features if f.category == "safety"]
+            if risk_score > 0.3:
+                triggered = [f for f in analysis.top_features if f.category == "safety" or f.activation > 10]
+            else:
+                # For benign content, show minimal triggered features with low activations
+                triggered = [f for f in analysis.top_features[:2] if f.activation > 0.5]
             
             # Generate recommendations
             recommendations = []
-            if risk_level in ["high", "critical"]:
-                recommendations.append(f"Block features: {[f.index for f in triggered[:3]]}")
-                recommendations.append("Consider content filtering before model input")
-            if risk_level == "medium":
+            if risk_level == "critical":
+                recommendations.append(f"🚫 Block features: {[f.index for f in triggered[:3]]}")
+                recommendations.append("⚠️ Apply strict content filtering before model input")
+                recommendations.append("🔒 Consider rejecting this input entirely")
+            elif risk_level == "high":
+                recommendations.append(f"🔍 Monitor features: {[f.index for f in triggered[:3]]}")
+                recommendations.append("Consider output filtering and human review")
+            elif risk_level == "medium":
                 recommendations.append("Monitor output for potential issues")
+                recommendations.append("Apply standard safety guardrails")
+            else:
+                recommendations.append("✅ Content appears safe for processing")
             
             results.append(SafetyAuditResult(
                 prompt=prompt,
-                safety_score=1 - safety_score,  # Invert so higher = safer
+                safety_score=safety_score,
                 triggered_features=triggered,
                 risk_level=risk_level,
                 recommendations=recommendations
@@ -537,18 +595,32 @@ class MockNeuroEngine:
         results = {}
         
         for prompt in prompts:
-            analysis = self.analyze_prompt(prompt)
+            content_scores = self._detect_content_type(prompt)
+            risk_score = content_scores.get("safety", 0.0)
+            is_normal = content_scores.get("normal", 0.0) > 0.5
+            
             feature_activations = {}
             
             for idx in safety_feature_indices:
-                if idx < len(analysis.all_activations):
-                    # Reduce activations if this is a "fine-tuned" model
-                    base_val = float(analysis.all_activations[idx])
-                    if self.custom_weights_path:
-                        base_val *= np.random.uniform(0.1, 0.4)
-                    feature_activations[idx] = base_val
+                if is_normal and risk_score < 0.1:
+                    # Benign content: very low safety feature activations
+                    base_val = np.random.uniform(0.5, 3.0)
+                elif risk_score > 0.5:
+                    # Dangerous content: high safety feature activations
+                    base_val = np.random.uniform(50, 120) * risk_score
                 else:
-                    feature_activations[idx] = 0.0
+                    # Moderate content
+                    base_val = np.random.uniform(5, 25) * (risk_score + 0.2)
+                
+                # For "fine-tuned/degraded" model, dramatically reduce safety activations
+                # This simulates safety collapse
+                if self.custom_weights_path:
+                    if risk_score > 0.3:
+                        # Safety features fire LESS on dangerous content (bad!)
+                        base_val *= np.random.uniform(0.1, 0.3)
+                    # Benign stays about the same
+                
+                feature_activations[idx] = float(base_val)
             
             results[prompt] = feature_activations
         
