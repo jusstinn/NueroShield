@@ -634,14 +634,20 @@ class NeuroEngine:
             if default_hook is None:
                 default_hook = "blocks.8.hook_resid_pre"  # Layer 8 for GPT-2
         
-        print(f"[NeuroEngine] Initializing on device: {self.device}")
+        print(f"[NeuroEngine] ========================================", flush=True)
+        print(f"[NeuroEngine] INITIALIZING ENGINE", flush=True)
+        print(f"[NeuroEngine] Device: {self.device}", flush=True)
+        print(f"[NeuroEngine] ========================================", flush=True)
         
         try:
+            print(f"[NeuroEngine] Step 1/5: Importing libraries...", flush=True)
             from transformer_lens import HookedTransformer
             from sae_lens import SAE
             import os
+            print(f"[NeuroEngine] ✓ Libraries imported", flush=True)
             
             # Ensure HuggingFace token is available for gated models
+            print(f"[NeuroEngine] Step 2/5: Setting up HuggingFace token...", flush=True)
             hf_token = None
             try:
                 # Try multiple ways to get the token
@@ -668,14 +674,15 @@ class NeuroEngine:
                 if hf_token:
                     os.environ["HF_TOKEN"] = hf_token
                     os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
-                    print(f"[NeuroEngine] HuggingFace token found: {hf_token[:8]}...")
+                    print(f"[NeuroEngine] ✓ Token found: {hf_token[:8]}...", flush=True)
                 else:
-                    print("[NeuroEngine] Warning: No HuggingFace token found. Gated models may fail.")
+                    print("[NeuroEngine] ⚠ WARNING: No HuggingFace token found!", flush=True)
             except Exception as e:
-                print(f"[NeuroEngine] Could not load HF token: {e}")
+                print(f"[NeuroEngine] ⚠ Token error: {e}", flush=True)
             
             # Load model
-            print(f"[NeuroEngine] Loading {model_name}...")
+            print(f"[NeuroEngine] Step 3/5: Loading model '{model_name}'...", flush=True)
+            print(f"[NeuroEngine] (This downloads ~5GB on first run, please wait...)", flush=True)
             
             # For gated models, set token in environment (don't pass as argument - causes duplicate)
             load_kwargs = {
@@ -687,19 +694,24 @@ class NeuroEngine:
             self.model = HookedTransformer.from_pretrained(model_name, **load_kwargs)
             self.model_name = model_name
             self.n_layers = self.model.cfg.n_layers
+            print(f"[NeuroEngine] ✓ Model loaded! Layers: {self.n_layers}", flush=True)
             
             # Load custom weights if provided
             if custom_weights_path:
-                print(f"[NeuroEngine] Loading custom weights: {custom_weights_path}")
+                print(f"[NeuroEngine] Step 4/5: Loading custom weights: {custom_weights_path}", flush=True)
                 try:
                     state_dict = torch.load(custom_weights_path, map_location=self.device)
                     self.model.load_state_dict(state_dict, strict=False)
-                    print("[NeuroEngine] Custom weights loaded!")
+                    print("[NeuroEngine] ✓ Custom weights loaded!", flush=True)
                 except Exception as e:
-                    warnings.warn(f"Failed to load custom weights: {e}")
+                    print(f"[NeuroEngine] ⚠ Custom weights failed: {e}", flush=True)
+            else:
+                print(f"[NeuroEngine] Step 4/5: No custom weights (skipped)", flush=True)
             
             # Load SAE
-            print(f"[NeuroEngine] Loading SAE ({sae_release}, {default_hook})...")
+            print(f"[NeuroEngine] Step 5/5: Loading SAE...", flush=True)
+            print(f"[NeuroEngine]   Release: {sae_release}", flush=True)
+            print(f"[NeuroEngine]   Hook: {default_hook}", flush=True)
             self.sae, self.cfg_dict, self.sparsity = SAE.from_pretrained(
                 release=sae_release,
                 sae_id=default_hook,
@@ -708,6 +720,7 @@ class NeuroEngine:
             self.sae_id = default_hook
             self.hook_point = default_hook
             self.n_features = self.sae.cfg.d_sae
+            print(f"[NeuroEngine] ✓ SAE loaded! Features: {self.n_features:,}", flush=True)
             
             # Cache for loaded SAEs at different layers
             self._sae_cache = {default_hook: self.sae}
@@ -1258,11 +1271,18 @@ def create_engine(
     force_mock: bool = False
 ) -> Union[NeuroEngine, MockNeuroEngine]:
     """Factory to create appropriate engine."""
+    print("=" * 60, flush=True)
+    print("NEUROSHIELD ENGINE FACTORY", flush=True)
+    print("=" * 60, flush=True)
+    print(f"MOCK_MODE: {MOCK_MODE}", flush=True)
+    print(f"force_mock: {force_mock}", flush=True)
+    
     if MOCK_MODE or force_mock:
-        print("[Factory] Creating MockNeuroEngine")
+        print("[Factory] Creating MockNeuroEngine...", flush=True)
         return MockNeuroEngine(custom_weights_path)
     else:
-        print("[Factory] Creating NeuroEngine")
+        print("[Factory] Creating REAL NeuroEngine...", flush=True)
+        print("[Factory] This will load Gemma-2-2B (~5GB)", flush=True)
         return NeuroEngine(custom_weights_path)
 
 
