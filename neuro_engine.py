@@ -642,12 +642,33 @@ class NeuroEngine:
             import os
             
             # Ensure HuggingFace token is available for gated models
+            hf_token = None
             try:
-                from huggingface_hub import HfFolder
-                token = HfFolder.get_token()
-                if token:
-                    os.environ["HF_TOKEN"] = token
-                    print(f"[NeuroEngine] HuggingFace token found and set")
+                # Try multiple ways to get the token
+                hf_token = os.environ.get("HF_TOKEN")
+                
+                if not hf_token:
+                    # Try reading from cache files
+                    import pathlib
+                    token_paths = [
+                        pathlib.Path.home() / ".cache" / "huggingface" / "token",
+                        pathlib.Path.home() / ".cache" / "huggingface" / "stored_tokens",
+                        pathlib.Path("/home/ubuntu/.cache/huggingface/token"),
+                    ]
+                    for path in token_paths:
+                        if path.exists():
+                            hf_token = path.read_text().strip()
+                            if hf_token:
+                                break
+                
+                if not hf_token:
+                    from huggingface_hub import HfFolder
+                    hf_token = HfFolder.get_token()
+                
+                if hf_token:
+                    os.environ["HF_TOKEN"] = hf_token
+                    os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+                    print(f"[NeuroEngine] HuggingFace token found: {hf_token[:8]}...")
                 else:
                     print("[NeuroEngine] Warning: No HuggingFace token found. Gated models may fail.")
             except Exception as e:
@@ -655,11 +676,17 @@ class NeuroEngine:
             
             # Load model
             print(f"[NeuroEngine] Loading {model_name}...")
-            self.model = HookedTransformer.from_pretrained(
-                model_name,
-                device=self.device,
-                dtype="float16" if "gemma" in model_name.lower() else None,  # Use fp16 for large models
-            )
+            
+            # For gated models, pass token explicitly
+            load_kwargs = {
+                "device": self.device,
+            }
+            if "gemma" in model_name.lower():
+                load_kwargs["dtype"] = "float16"
+                if hf_token:
+                    load_kwargs["token"] = hf_token
+            
+            self.model = HookedTransformer.from_pretrained(model_name, **load_kwargs)
             self.model_name = model_name
             self.n_layers = self.model.cfg.n_layers
             
