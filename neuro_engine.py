@@ -831,13 +831,12 @@ class NeuroEngine:
         max_new_tokens: int = 50
     ) -> GenerationResult:
         """
-        Generate with active feature interventions.
+        Generate with active feature interventions using TransformerLens hooks.
         
         Supports:
         - CLAMP: Set features to 0
         - BOOST: Multiply feature activation
         - SET: Set to specific value
-        - ABLATE: Remove feature contribution from residual
         """
         blocked_log = {i.feature_index: 0 for i in interventions 
                        if i.intervention_type == InterventionType.CLAMP}
@@ -846,42 +845,49 @@ class NeuroEngine:
         interventions_per_token = []
         
         def intervention_hook(activations, hook):
-            nonlocal blocked_log, boosted_log
+            """Hook function that modifies activations via SAE."""
+            nonlocal blocked_log, boosted_log, interventions_per_token
             
+            # activations shape: [batch, seq_len, d_model]
             batch, seq_len, d_model = activations.shape
             modified = activations.clone()
             
-            for pos in range(seq_len):
-                pos_acts = activations[:, pos, :]
-                feature_acts = self.sae.encode(pos_acts)
+            # Only process the last token position for efficiency during generation
+            pos = seq_len - 1
+            pos_acts = activations[:, pos, :]
+            
+            # Encode through SAE
+            feature_acts = self.sae.encode(pos_acts)
+            modified_features = feature_acts.clone()
+            interventions_applied = []
+            
+            # Apply interventions
+            for intervention in interventions:
+                idx = intervention.feature_index
+                if idx >= feature_acts.shape[-1]:
+                    continue
                 
-                modified_features = feature_acts.clone()
-                interventions_applied = []
+                current_val = feature_acts[0, idx].item()
                 
-                for intervention in interventions:
-                    idx = intervention.feature_index
-                    if idx >= feature_acts.shape[-1]:
-                        continue
-                    
-                    if intervention.intervention_type == InterventionType.CLAMP:
-                        if torch.any(feature_acts[:, idx] > 0):
-                            modified_features[:, idx] = 0.0
-                            blocked_log[idx] = blocked_log.get(idx, 0) + 1
-                            interventions_applied.append(("clamp", idx))
-                    
-                    elif intervention.intervention_type == InterventionType.BOOST:
-                        modified_features[:, idx] *= intervention.value
-                        boosted_log[idx] = boosted_log.get(idx, 0) + 1
-                        interventions_applied.append(("boost", idx))
-                    
-                    elif intervention.intervention_type == InterventionType.SET:
-                        modified_features[:, idx] = intervention.value
-                        interventions_applied.append(("set", idx))
+                if intervention.intervention_type == InterventionType.CLAMP:
+                    if current_val > 0.01:  # Feature is active
+                        modified_features[:, idx] = 0.0
+                        blocked_log[idx] = blocked_log.get(idx, 0) + 1
+                        interventions_applied.append(("clamp", idx, current_val))
                 
-                if interventions_applied:
-                    reconstructed = self.sae.decode(modified_features)
-                    modified[:, pos, :] = reconstructed
+                elif intervention.intervention_type == InterventionType.BOOST:
+                    modified_features[:, idx] = feature_acts[:, idx] * intervention.value
+                    boosted_log[idx] = boosted_log.get(idx, 0) + 1
+                    interventions_applied.append(("boost", idx, current_val))
                 
+                elif intervention.intervention_type == InterventionType.SET:
+                    modified_features[:, idx] = intervention.value
+                    interventions_applied.append(("set", idx, current_val))
+            
+            # Decode back and replace
+            if interventions_applied:
+                reconstructed = self.sae.decode(modified_features)
+                modified[:, pos, :] = reconstructed
                 interventions_per_token.append({
                     "position": pos,
                     "interventions": interventions_applied
@@ -889,15 +895,19 @@ class NeuroEngine:
             
             return modified
         
-        # Extract layer number for hook
-        layer_num = int(self.hook_point.split(".")[1])
-        hook_handle = self.model.blocks[layer_num].hook_resid_pre.register_forward_hook(
-            lambda m, i, o: intervention_hook(o, None)
-        )
+        # Use TransformerLens hook system
+        tokens = self.model.to_tokens(text)
+        
+        # Create hook specification for TransformerLens
+        hook_name = self.hook_point  # e.g., "blocks.8.hook_resid_pre"
+        
+        # For generation, we need to apply hook on each forward pass
+        # TransformerLens's generate doesn't support run_with_hooks directly,
+        # so we use the add_hook method
+        self.model.reset_hooks()
+        self.model.add_hook(hook_name, intervention_hook)
         
         try:
-            tokens = self.model.to_tokens(text)
-            
             with torch.no_grad():
                 generated = self.model.generate(
                     tokens,
@@ -911,7 +921,8 @@ class NeuroEngine:
             tokens_generated = generated.shape[1] - tokens.shape[1]
             
         finally:
-            hook_handle.remove()
+            # Always remove hooks
+            self.model.reset_hooks()
         
         return GenerationResult(
             text=generated_text,
