@@ -687,16 +687,42 @@ def main():
                 st.success("✅ Token set!")
             
             if st.button("⚡ Initialize Engine", use_container_width=True, type="primary"):
-                with st.spinner("Loading neural systems... (this may take 1-2 min for Gemma)"):
-                    try:
-                        # Clear cache to force reload with new token
-                        st.cache_resource.clear()
-                        st.session_state.engine = get_or_create_engine()
-                        st.success("✅ Engine online!")
-                        time.sleep(0.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Init failed: {e}")
+                progress_bar = st.progress(0, text="Starting initialization...")
+                status_text = st.empty()
+                
+                try:
+                    # Step 1: Clear cache
+                    progress_bar.progress(10, text="Step 1/5: Clearing cache...")
+                    status_text.info("🔄 Clearing old cache...")
+                    st.cache_resource.clear()
+                    time.sleep(0.3)
+                    
+                    # Step 2: Import
+                    progress_bar.progress(20, text="Step 2/5: Importing libraries...")
+                    status_text.info("📚 Loading transformer_lens and sae_lens...")
+                    time.sleep(0.3)
+                    
+                    # Step 3: Loading model (this is the slow part)
+                    progress_bar.progress(30, text="Step 3/5: Loading Gemma-2-2B model (~60 sec)...")
+                    status_text.warning("⏳ Loading model weights... This takes about 60 seconds...")
+                    
+                    # Actually load the engine
+                    st.session_state.engine = get_or_create_engine()
+                    
+                    # Step 4: Done
+                    progress_bar.progress(90, text="Step 4/5: Finalizing...")
+                    status_text.info("🔧 Setting up features...")
+                    time.sleep(0.3)
+                    
+                    # Step 5: Complete
+                    progress_bar.progress(100, text="Complete!")
+                    status_text.success(f"✅ Engine online! {st.session_state.engine.n_features:,} features loaded.")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.error(f"❌ Init failed: {e}")
         else:
             engine = st.session_state.engine
             st.markdown('<span class="status-badge status-active">🟢 ONLINE</span>', unsafe_allow_html=True)
