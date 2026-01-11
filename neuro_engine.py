@@ -677,14 +677,12 @@ class NeuroEngine:
             # Load model
             print(f"[NeuroEngine] Loading {model_name}...")
             
-            # For gated models, pass token explicitly
+            # For gated models, set token in environment (don't pass as argument - causes duplicate)
             load_kwargs = {
                 "device": self.device,
             }
             if "gemma" in model_name.lower():
                 load_kwargs["dtype"] = "float16"
-                if hf_token:
-                    load_kwargs["token"] = hf_token
             
             self.model = HookedTransformer.from_pretrained(model_name, **load_kwargs)
             self.model_name = model_name
