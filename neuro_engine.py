@@ -60,11 +60,19 @@ GPT2_HOOK_POINTS = [
 ]
 
 GEMMA_HOOK_POINTS = [
-    "blocks.5.hook_resid_post",
-    "blocks.10.hook_resid_post",
-    "blocks.15.hook_resid_post",
-    "blocks.20.hook_resid_post",
+    "layer_5/width_16k/average_l0_71",
+    "layer_10/width_16k/average_l0_71",
+    "layer_15/width_16k/average_l0_71",
+    "layer_20/width_16k/average_l0_71",
 ]
+
+# Mapping from SAE ID to transformer_lens hook point for Gemma
+GEMMA_SAE_TO_HOOK = {
+    "layer_5/width_16k/average_l0_71": "blocks.5.hook_resid_post",
+    "layer_10/width_16k/average_l0_71": "blocks.10.hook_resid_post",
+    "layer_15/width_16k/average_l0_71": "blocks.15.hook_resid_post",
+    "layer_20/width_16k/average_l0_71": "blocks.20.hook_resid_post",
+}
 
 # Auto-select based on model
 AVAILABLE_HOOK_POINTS = GEMMA_HOOK_POINTS if "gemma" in DEFAULT_MODEL else GPT2_HOOK_POINTS
@@ -628,11 +636,14 @@ class NeuroEngine:
         if "gemma" in model_name.lower():
             self.available_layers = GEMMA_HOOK_POINTS
             if default_hook is None:
-                default_hook = "blocks.20.hook_resid_post"  # Layer 20 for Gemma
+                # Gemma-scope uses different SAE ID format
+                default_hook = "layer_20/width_16k/average_l0_71"
+            self.hook_point_name = "blocks.20.hook_resid_post"  # For transformer_lens hooks
         else:
             self.available_layers = GPT2_HOOK_POINTS
             if default_hook is None:
                 default_hook = "blocks.8.hook_resid_pre"  # Layer 8 for GPT-2
+            self.hook_point_name = default_hook
         
         import sys
         sys.stderr.write(f"[NeuroEngine] ========================================\n")
@@ -733,9 +744,15 @@ class NeuroEngine:
                 device=self.device
             )
             self.sae_id = default_hook
-            self.hook_point = default_hook
+            # hook_point is the transformer_lens hook name (for adding hooks)
+            # sae_id is the SAE identifier (for loading SAEs)
+            if "gemma" in model_name.lower():
+                self.hook_point = GEMMA_SAE_TO_HOOK.get(default_hook, "blocks.20.hook_resid_post")
+            else:
+                self.hook_point = default_hook
             self.n_features = self.sae.cfg.d_sae
             sys.stderr.write(f"[NeuroEngine] [OK] SAE loaded! Features: {self.n_features:,}\n")
+            sys.stderr.write(f"[NeuroEngine] Hook point: {self.hook_point}\n")
             sys.stderr.flush()
             
             # Cache for loaded SAEs at different layers
