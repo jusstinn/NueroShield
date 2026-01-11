@@ -40,9 +40,15 @@ MOCK_MODE = False
 # =============================================================================
 # Configuration Constants
 # =============================================================================
-DEFAULT_MODEL = "gpt2-small"
-DEFAULT_SAE_RELEASE = "gpt2-small-res-jb"
-AVAILABLE_HOOK_POINTS = [
+# Model options:
+#   - "gpt2-small" with "gpt2-small-res-jb" (fast, no safety training)
+#   - "gemma-2-2b" with "gemma-scope-2b-pt-res" (safety-trained, has refusal!)
+#   - "gemma-2-9b" with "gemma-scope-9b-pt-res" (larger, more capable)
+DEFAULT_MODEL = "gemma-2-2b"
+DEFAULT_SAE_RELEASE = "gemma-scope-2b-pt-res"
+
+# Hook points vary by model
+GPT2_HOOK_POINTS = [
     "blocks.0.hook_resid_pre",
     "blocks.2.hook_resid_pre", 
     "blocks.4.hook_resid_pre",
@@ -51,6 +57,16 @@ AVAILABLE_HOOK_POINTS = [
     "blocks.10.hook_resid_pre",
     "blocks.11.hook_resid_post",
 ]
+
+GEMMA_HOOK_POINTS = [
+    "blocks.5.hook_resid_post",
+    "blocks.10.hook_resid_post",
+    "blocks.15.hook_resid_post",
+    "blocks.20.hook_resid_post",
+]
+
+# Auto-select based on model
+AVAILABLE_HOOK_POINTS = GEMMA_HOOK_POINTS if "gemma" in DEFAULT_MODEL else GPT2_HOOK_POINTS
 
 # Known feature categories (example indices - in practice, identify through analysis)
 FEATURE_CATEGORIES = {
@@ -599,14 +615,23 @@ class NeuroEngine:
         custom_weights_path: Optional[str] = None,
         model_name: str = DEFAULT_MODEL,
         sae_release: str = DEFAULT_SAE_RELEASE,
-        default_hook: str = "blocks.8.hook_resid_pre"
+        default_hook: Optional[str] = None
     ):
         """Initialize with model and SAE."""
         self.device = get_device()
         self.custom_weights_path = custom_weights_path
         self.feature_db = FeatureDatabase()
         self.session_history: List[AnalysisResult] = []
-        self.available_layers = AVAILABLE_HOOK_POINTS
+        
+        # Set hook points based on model type
+        if "gemma" in model_name.lower():
+            self.available_layers = GEMMA_HOOK_POINTS
+            if default_hook is None:
+                default_hook = "blocks.20.hook_resid_post"  # Layer 20 for Gemma
+        else:
+            self.available_layers = GPT2_HOOK_POINTS
+            if default_hook is None:
+                default_hook = "blocks.8.hook_resid_pre"  # Layer 8 for GPT-2
         
         print(f"[NeuroEngine] Initializing on device: {self.device}")
         
