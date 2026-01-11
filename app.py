@@ -914,7 +914,7 @@ def main():
             with gen_col1:
                 st.markdown("#### 🔓 Unprotected")
                 with st.spinner("Generating..."):
-                    unprotected = engine.generate_unprotected(prompt, max_new_tokens=60)
+                    unprotected = engine.generate_unprotected(prompt, max_new_tokens=150)
                 st.markdown(f'<div class="output-block">{unprotected}</div>', unsafe_allow_html=True)
             
             with gen_col2:
@@ -927,7 +927,7 @@ def main():
                         Intervention(idx, InterventionType.BOOST, value=mult)
                         for idx, mult in boosted_features.items()
                     ]
-                    protected = engine.generate_protected(prompt, interventions, max_new_tokens=60)
+                    protected = engine.generate_protected(prompt, interventions, max_new_tokens=150)
                 
                 st.markdown(f'<div class="output-block">{protected.text}</div>', unsafe_allow_html=True)
                 
