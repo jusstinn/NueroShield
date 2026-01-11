@@ -42,11 +42,11 @@ MOCK_MODE = False
 # =============================================================================
 # Model options:
 #   - "gpt2-small" with "gpt2-small-res-jb" (fast, no safety training)
-#   - "gemma-2-2b" with "gemma-scope-2b-pt-res" (safety-trained, has refusal!) [REQUIRES HF LOGIN]
-#   - "gemma-2-9b" with "gemma-scope-9b-pt-res" (larger, more capable) [REQUIRES HF LOGIN]
-# To use Gemma: huggingface-cli login (after accepting license at huggingface.co/google/gemma-2-2b)
-DEFAULT_MODEL = "gpt2-small"
-DEFAULT_SAE_RELEASE = "gpt2-small-res-jb"
+#   - "gemma-2-2b" with "gemma-scope-2b-pt-res" (safety-trained, has refusal!)
+#   - "gemma-2-9b" with "gemma-scope-9b-pt-res" (larger, more capable)
+# NOTE: Gemma requires HuggingFace login - run: huggingface-cli login
+DEFAULT_MODEL = "gemma-2-2b"
+DEFAULT_SAE_RELEASE = "gemma-scope-2b-pt-res"
 
 # Hook points vary by model
 GPT2_HOOK_POINTS = [
