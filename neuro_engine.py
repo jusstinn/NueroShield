@@ -845,53 +845,61 @@ class NeuroEngine:
         interventions_per_token = []
         
         def intervention_hook(activations, hook):
-            """Hook function that modifies activations via SAE."""
+            """Hook function that modifies activations via SAE at ALL positions."""
             nonlocal blocked_log, boosted_log, interventions_per_token
             
             # activations shape: [batch, seq_len, d_model]
             batch, seq_len, d_model = activations.shape
             modified = activations.clone()
             
-            # Only process the last token position for efficiency during generation
-            pos = seq_len - 1
-            pos_acts = activations[:, pos, :]
-            
-            # Encode through SAE
-            feature_acts = self.sae.encode(pos_acts)
-            modified_features = feature_acts.clone()
-            interventions_applied = []
-            
-            # Apply interventions
-            for intervention in interventions:
-                idx = intervention.feature_index
-                if idx >= feature_acts.shape[-1]:
-                    continue
+            # Process ALL token positions (not just last) for thorough intervention
+            for pos in range(seq_len):
+                pos_acts = activations[:, pos, :]
                 
-                current_val = feature_acts[0, idx].item()
+                # Encode through SAE
+                feature_acts = self.sae.encode(pos_acts)
+                modified_features = feature_acts.clone()
+                interventions_applied = []
+                any_intervention = False
                 
-                if intervention.intervention_type == InterventionType.CLAMP:
-                    if current_val > 0.01:  # Feature is active
+                # Apply interventions - ALWAYS apply, not conditionally
+                for intervention in interventions:
+                    idx = intervention.feature_index
+                    if idx >= feature_acts.shape[-1]:
+                        continue
+                    
+                    current_val = feature_acts[0, idx].item()
+                    
+                    if intervention.intervention_type == InterventionType.CLAMP:
+                        # ALWAYS clamp to 0, unconditionally
+                        original_val = modified_features[:, idx].clone()
                         modified_features[:, idx] = 0.0
-                        blocked_log[idx] = blocked_log.get(idx, 0) + 1
-                        interventions_applied.append(("clamp", idx, current_val))
+                        if abs(current_val) > 0.001:  # Log if it was active
+                            blocked_log[idx] = blocked_log.get(idx, 0) + 1
+                            interventions_applied.append(("clamp", idx, current_val))
+                        any_intervention = True
+                    
+                    elif intervention.intervention_type == InterventionType.BOOST:
+                        modified_features[:, idx] = feature_acts[:, idx] * intervention.value
+                        boosted_log[idx] = boosted_log.get(idx, 0) + 1
+                        interventions_applied.append(("boost", idx, current_val))
+                        any_intervention = True
+                    
+                    elif intervention.intervention_type == InterventionType.SET:
+                        modified_features[:, idx] = intervention.value
+                        interventions_applied.append(("set", idx, current_val))
+                        any_intervention = True
                 
-                elif intervention.intervention_type == InterventionType.BOOST:
-                    modified_features[:, idx] = feature_acts[:, idx] * intervention.value
-                    boosted_log[idx] = boosted_log.get(idx, 0) + 1
-                    interventions_applied.append(("boost", idx, current_val))
-                
-                elif intervention.intervention_type == InterventionType.SET:
-                    modified_features[:, idx] = intervention.value
-                    interventions_applied.append(("set", idx, current_val))
-            
-            # Decode back and replace
-            if interventions_applied:
-                reconstructed = self.sae.decode(modified_features)
-                modified[:, pos, :] = reconstructed
-                interventions_per_token.append({
-                    "position": pos,
-                    "interventions": interventions_applied
-                })
+                # ALWAYS decode back if we have interventions (even if features weren't active)
+                if any_intervention:
+                    reconstructed = self.sae.decode(modified_features)
+                    modified[:, pos, :] = reconstructed
+                    
+                    if interventions_applied:
+                        interventions_per_token.append({
+                            "position": pos,
+                            "interventions": interventions_applied
+                        })
             
             return modified
         
