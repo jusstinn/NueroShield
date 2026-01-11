@@ -639,12 +639,26 @@ class NeuroEngine:
         try:
             from transformer_lens import HookedTransformer
             from sae_lens import SAE
+            import os
+            
+            # Ensure HuggingFace token is available for gated models
+            try:
+                from huggingface_hub import HfFolder
+                token = HfFolder.get_token()
+                if token:
+                    os.environ["HF_TOKEN"] = token
+                    print(f"[NeuroEngine] HuggingFace token found and set")
+                else:
+                    print("[NeuroEngine] Warning: No HuggingFace token found. Gated models may fail.")
+            except Exception as e:
+                print(f"[NeuroEngine] Could not load HF token: {e}")
             
             # Load model
             print(f"[NeuroEngine] Loading {model_name}...")
             self.model = HookedTransformer.from_pretrained(
                 model_name,
-                device=self.device
+                device=self.device,
+                dtype="float16" if "gemma" in model_name.lower() else None,  # Use fp16 for large models
             )
             self.model_name = model_name
             self.n_layers = self.model.cfg.n_layers
