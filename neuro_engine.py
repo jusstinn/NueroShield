@@ -644,7 +644,7 @@ class NeuroEngine:
             from transformer_lens import HookedTransformer
             from sae_lens import SAE
             import os
-            print(f"[NeuroEngine] ✓ Libraries imported", flush=True)
+            print(f"[NeuroEngine] [OK] Libraries imported", flush=True)
             
             # Ensure HuggingFace token is available for gated models
             print(f"[NeuroEngine] Step 2/5: Setting up HuggingFace token...", flush=True)
@@ -674,11 +674,11 @@ class NeuroEngine:
                 if hf_token:
                     os.environ["HF_TOKEN"] = hf_token
                     os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
-                    print(f"[NeuroEngine] ✓ Token found: {hf_token[:8]}...", flush=True)
+                    print(f"[NeuroEngine] [OK] Token found: {hf_token[:8]}...", flush=True)
                 else:
-                    print("[NeuroEngine] ⚠ WARNING: No HuggingFace token found!", flush=True)
+                    print("[NeuroEngine] [WARN] No HuggingFace token found!", flush=True)
             except Exception as e:
-                print(f"[NeuroEngine] ⚠ Token error: {e}", flush=True)
+                print(f"[NeuroEngine] [WARN] Token error: {e}", flush=True)
             
             # Load model
             print(f"[NeuroEngine] Step 3/5: Loading model '{model_name}'...", flush=True)
@@ -694,7 +694,7 @@ class NeuroEngine:
             self.model = HookedTransformer.from_pretrained(model_name, **load_kwargs)
             self.model_name = model_name
             self.n_layers = self.model.cfg.n_layers
-            print(f"[NeuroEngine] ✓ Model loaded! Layers: {self.n_layers}", flush=True)
+            print(f"[NeuroEngine] [OK] Model loaded! Layers: {self.n_layers}", flush=True)
             
             # Load custom weights if provided
             if custom_weights_path:
@@ -702,9 +702,9 @@ class NeuroEngine:
                 try:
                     state_dict = torch.load(custom_weights_path, map_location=self.device)
                     self.model.load_state_dict(state_dict, strict=False)
-                    print("[NeuroEngine] ✓ Custom weights loaded!", flush=True)
+                    print("[NeuroEngine] [OK] Custom weights loaded!", flush=True)
                 except Exception as e:
-                    print(f"[NeuroEngine] ⚠ Custom weights failed: {e}", flush=True)
+                    print(f"[NeuroEngine] [WARN] Custom weights failed: {e}", flush=True)
             else:
                 print(f"[NeuroEngine] Step 4/5: No custom weights (skipped)", flush=True)
             
@@ -720,7 +720,7 @@ class NeuroEngine:
             self.sae_id = default_hook
             self.hook_point = default_hook
             self.n_features = self.sae.cfg.d_sae
-            print(f"[NeuroEngine] ✓ SAE loaded! Features: {self.n_features:,}", flush=True)
+            print(f"[NeuroEngine] [OK] SAE loaded! Features: {self.n_features:,}", flush=True)
             
             # Cache for loaded SAEs at different layers
             self._sae_cache = {default_hook: self.sae}
