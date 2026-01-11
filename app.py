@@ -399,12 +399,18 @@ def load_engine(custom_weights_path: Optional[str] = None, _mock_mode: bool = MO
     
     The _mock_mode parameter ensures cache is invalidated when MOCK_MODE changes.
     """
-    print(f"[load_engine] Creating engine with MOCK_MODE={_mock_mode}")
+    import sys
+    sys.stderr.write(f"[load_engine] Creating engine with MOCK_MODE={_mock_mode}\n")
+    sys.stderr.flush()
     return create_engine(custom_weights_path=custom_weights_path)
 
 
 def get_or_create_engine():
     """Get cached engine, ensuring it matches current MOCK_MODE setting."""
+    import sys
+    sys.stderr.write("[get_or_create_engine] Called\n")
+    sys.stderr.flush()
+    
     # Pass MOCK_MODE to ensure cache invalidation when it changes
     engine = load_engine(_mock_mode=MOCK_MODE)
     
@@ -413,13 +419,19 @@ def get_or_create_engine():
     
     if MOCK_MODE and not isinstance(engine, MockNeuroEngine):
         # Cache mismatch - clear and reload
+        sys.stderr.write("[get_or_create_engine] Cache mismatch - reloading\n")
+        sys.stderr.flush()
         st.cache_resource.clear()
         engine = load_engine(_mock_mode=MOCK_MODE)
     elif not MOCK_MODE and isinstance(engine, MockNeuroEngine):
         # Cache mismatch - clear and reload
+        sys.stderr.write("[get_or_create_engine] Cache mismatch - reloading\n")
+        sys.stderr.flush()
         st.cache_resource.clear()
         engine = load_engine(_mock_mode=MOCK_MODE)
     
+    sys.stderr.write(f"[get_or_create_engine] Done, returning engine\n")
+    sys.stderr.flush()
     return engine
 
 # =============================================================================
