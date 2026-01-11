@@ -35,7 +35,7 @@ from pathlib import Path
 # =============================================================================
 # Set to True to test UI without downloading large models (~500MB)
 # This simulates model behavior with realistic random data
-MOCK_MODE = True
+MOCK_MODE = False
 
 # =============================================================================
 # Configuration Constants
@@ -704,7 +704,7 @@ class NeuroEngine:
         
         # Analyze last token
         last_acts = residual[0, -1, :]
-        feature_acts = sae.encode(last_acts.unsqueeze(0)).squeeze(0).cpu().numpy()
+        feature_acts = sae.encode(last_acts.unsqueeze(0)).squeeze(0).detach().cpu().numpy()
         
         # Get top features
         top_indices = np.argsort(np.abs(feature_acts))[-10:][::-1]
@@ -727,7 +727,7 @@ class NeuroEngine:
             top_per_token = []
             
             for pos in range(seq_len):
-                pos_acts = sae.encode(residual[0, pos, :].unsqueeze(0)).squeeze(0).cpu().numpy()
+                pos_acts = sae.encode(residual[0, pos, :].unsqueeze(0)).squeeze(0).detach().cpu().numpy()
                 all_token_acts.append(pos_acts[:100])  # Limit for memory
                 
                 top_idx = np.argsort(np.abs(pos_acts))[-5:][::-1]
@@ -951,7 +951,7 @@ class NeuroEngine:
         for layer in critical_layers[:2]:
             sae = self._get_sae_for_layer(layer)
             acts = clean_cache[layer][0, -1, :]
-            feature_acts = sae.encode(acts.unsqueeze(0)).squeeze(0).cpu().numpy()
+            feature_acts = sae.encode(acts.unsqueeze(0)).squeeze(0).detach().cpu().numpy()
             
             top_idx = np.argsort(np.abs(feature_acts))[-10:][::-1]
             for idx in top_idx:
