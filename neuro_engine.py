@@ -1015,43 +1015,77 @@ class NeuroEngine:
         prompts: List[str],
         safety_threshold: float = 0.5
     ) -> List[SafetyAuditResult]:
-        """Automated safety audit across prompts."""
+        """
+        Automated safety audit across prompts.
+        
+        Uses activation magnitude and keyword detection to estimate risk.
+        Higher activations on certain prompts may indicate concerning content.
+        """
         results = []
-        safety_features = FEATURE_CATEGORIES.get("safety", [])
+        
+        # Keywords that often indicate potentially harmful content
+        high_risk_keywords = [
+            "kill", "murder", "bomb", "weapon", "hack", "virus", "steal", 
+            "attack", "hurt", "harm", "destroy", "exploit", "illegal",
+            "drug", "poison", "terrorist", "shoot", "stab", "die", "death"
+        ]
+        medium_risk_keywords = [
+            "fight", "danger", "risk", "cheat", "lie", "trick", "break",
+            "secret", "hide", "escape", "revenge", "angry", "hate"
+        ]
         
         for prompt in prompts:
             analysis = self.analyze_prompt(prompt)
+            prompt_lower = prompt.lower()
             
-            # Calculate safety score based on safety feature activations
-            safety_activations = [
-                analysis.all_activations[idx] 
-                for idx in safety_features 
-                if idx < len(analysis.all_activations)
-            ]
+            # Calculate risk based on multiple factors
+            # 1. Keyword detection
+            high_risk_count = sum(1 for kw in high_risk_keywords if kw in prompt_lower)
+            medium_risk_count = sum(1 for kw in medium_risk_keywords if kw in prompt_lower)
             
-            max_safety_activation = max(safety_activations) if safety_activations else 0
+            # 2. Activation magnitude analysis
+            top_activation = analysis.top_features[0].activation if analysis.top_features else 0
+            mean_activation = float(np.mean(np.abs(analysis.all_activations)))
+            max_activation = float(np.max(np.abs(analysis.all_activations)))
+            
+            # 3. Activation sparsity (very high activations may indicate specific triggered concepts)
+            high_activation_count = int(np.sum(np.abs(analysis.all_activations) > 2.0))
+            
+            # Calculate composite risk score
+            keyword_risk = min(1.0, (high_risk_count * 0.3 + medium_risk_count * 0.1))
+            activation_risk = min(1.0, max_activation / 20.0)  # Normalize
+            sparsity_risk = min(1.0, high_activation_count / 100.0)
+            
+            # Combined risk (higher = more risky)
+            combined_risk = (keyword_risk * 0.5) + (activation_risk * 0.3) + (sparsity_risk * 0.2)
             
             # Determine risk level
-            if max_safety_activation > 10:
+            if combined_risk > 0.7 or high_risk_count >= 2:
                 risk_level = "critical"
                 safety_score = 0.1
-            elif max_safety_activation > 5:
+            elif combined_risk > 0.5 or high_risk_count >= 1:
                 risk_level = "high"
                 safety_score = 0.3
-            elif max_safety_activation > 2:
+            elif combined_risk > 0.25 or medium_risk_count >= 1:
                 risk_level = "medium"
                 safety_score = 0.6
             else:
                 risk_level = "low"
                 safety_score = 0.9
             
-            triggered = [f for f in analysis.top_features 
-                        if f.index in safety_features]
+            # Get triggered features (top activations)
+            triggered = [f for f in analysis.top_features if f.activation > 1.0]
             
             recommendations = []
-            if risk_level in ["critical", "high"]:
-                recommendations.append(f"Block features: {[f.index for f in triggered[:3]]}")
-                recommendations.append("Apply input sanitization")
+            if risk_level == "critical":
+                recommendations.append(f"🚫 Block top features: {[f.index for f in triggered[:3]]}")
+                recommendations.append("⚠️ Apply strict input filtering")
+                recommendations.append(f"📊 High activations detected: max={max_activation:.2f}")
+            elif risk_level == "high":
+                recommendations.append(f"🔍 Monitor features: {[f.index for f in triggered[:3]]}")
+                recommendations.append("Consider output filtering")
+            elif risk_level == "medium":
+                recommendations.append("Monitor output for concerning content")
             
             results.append(SafetyAuditResult(
                 prompt=prompt,
