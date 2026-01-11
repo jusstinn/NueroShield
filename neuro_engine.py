@@ -763,15 +763,56 @@ class NeuroEngine:
         text: str,
         layers: Optional[List[str]] = None
     ) -> MultiLayerAnalysis:
-        """Analyze across multiple layers to see feature evolution."""
+        """
+        Analyze across multiple layers to see feature/activation evolution.
+        
+        Note: SAE encoding is only available for blocks.8.hook_resid_pre.
+        For other layers, we show raw activation statistics.
+        """
         if layers is None:
             layers = self.available_layers[:4]
         
         results = {}
         feature_counts = []
         
+        # Get all activations in one forward pass
+        tokens = self.model.to_tokens(text)
+        token_strs = list(self.model.to_str_tokens(text))
+        
+        with torch.no_grad():
+            _, cache = self.model.run_with_cache(tokens)
+        
         for layer in layers:
-            result = self.analyze_prompt(text, layer=layer)
+            residual = cache[layer]  # [batch, seq_len, d_model]
+            last_acts = residual[0, -1, :]  # [d_model]
+            
+            # For layer 8, use SAE encoding; for others, use raw activations
+            if "blocks.8" in layer:
+                feature_acts = self.sae.encode(last_acts.unsqueeze(0)).squeeze(0).detach().cpu().numpy()
+            else:
+                # Use raw activation magnitudes (top 100 dimensions)
+                feature_acts = last_acts.detach().cpu().numpy()
+            
+            # Get top features/dimensions
+            top_indices = np.argsort(np.abs(feature_acts))[-10:][::-1]
+            top_features = [
+                FeatureActivation(
+                    index=int(idx),
+                    activation=float(feature_acts[idx]),
+                    layer=layer,
+                    category=self.feature_db.get_category(idx) if "blocks.8" in layer else None,
+                    description=f"{'SAE Feature' if 'blocks.8' in layer else 'Activation Dim'} {idx}"
+                )
+                for idx in top_indices
+            ]
+            
+            result = AnalysisResult(
+                top_features=top_features,
+                all_activations=feature_acts[:100] if len(feature_acts) > 100 else feature_acts,
+                tokens=token_strs,
+                layer=layer,
+                prompt=text
+            )
             results[layer] = result
             feature_counts.append(result.all_activations[:100])
         
