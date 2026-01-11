@@ -393,9 +393,34 @@ init_session_state()
 # Cached Loading
 # =============================================================================
 @st.cache_resource
-def load_engine(custom_weights_path: Optional[str] = None):
-    """Load engine with caching."""
+def load_engine(custom_weights_path: Optional[str] = None, _mock_mode: bool = MOCK_MODE):
+    """
+    Load engine with caching.
+    
+    The _mock_mode parameter ensures cache is invalidated when MOCK_MODE changes.
+    """
+    print(f"[load_engine] Creating engine with MOCK_MODE={_mock_mode}")
     return create_engine(custom_weights_path=custom_weights_path)
+
+
+def get_or_create_engine():
+    """Get cached engine, ensuring it matches current MOCK_MODE setting."""
+    # Pass MOCK_MODE to ensure cache invalidation when it changes
+    engine = load_engine(_mock_mode=MOCK_MODE)
+    
+    # Verify we got the right type of engine
+    from neuro_engine import MockNeuroEngine, NeuroEngine
+    
+    if MOCK_MODE and not isinstance(engine, MockNeuroEngine):
+        # Cache mismatch - clear and reload
+        st.cache_resource.clear()
+        engine = load_engine(_mock_mode=MOCK_MODE)
+    elif not MOCK_MODE and isinstance(engine, MockNeuroEngine):
+        # Cache mismatch - clear and reload
+        st.cache_resource.clear()
+        engine = load_engine(_mock_mode=MOCK_MODE)
+    
+    return engine
 
 # =============================================================================
 # Visualization Functions
@@ -648,7 +673,7 @@ def main():
             if st.button("⚡ Initialize Engine", use_container_width=True, type="primary"):
                 with st.spinner("Loading neural systems..."):
                     try:
-                        st.session_state.engine = load_engine()
+                        st.session_state.engine = get_or_create_engine()
                         st.success("✅ Engine online!")
                         time.sleep(0.5)
                         st.rerun()
