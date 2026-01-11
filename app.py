@@ -670,9 +670,27 @@ def main():
         st.markdown("### 🚀 Engine Status")
         
         if st.session_state.engine is None:
+            # HuggingFace token input for gated models (like Gemma)
+            st.markdown("#### 🔑 HuggingFace Token")
+            st.caption("Required for Gemma models. Get token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)")
+            hf_token = st.text_input(
+                "Paste your HF token:",
+                type="password",
+                key="hf_token_input",
+                placeholder="hf_..."
+            )
+            
+            if hf_token:
+                import os
+                os.environ["HF_TOKEN"] = hf_token
+                os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+                st.success("✅ Token set!")
+            
             if st.button("⚡ Initialize Engine", use_container_width=True, type="primary"):
-                with st.spinner("Loading neural systems..."):
+                with st.spinner("Loading neural systems... (this may take 1-2 min for Gemma)"):
                     try:
+                        # Clear cache to force reload with new token
+                        st.cache_resource.clear()
                         st.session_state.engine = get_or_create_engine()
                         st.success("✅ Engine online!")
                         time.sleep(0.5)
